@@ -1,0 +1,1815 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <style>
+  body {
+    background: transparent !important;
+  }
+  .text-shadow {
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 4px #000, 0 0 1px #000, 0 0 12px #000;
+  }
+  .info-icon {
+    width: 30px;
+    text-align: center;
+  }
+  
+  .weather-icon {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .weather-icon-main {
+    color: white;
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 4px #000, 0 0 1px #000, 0 0 12px #000;
+  }
+  
+  .heat-waves {
+    position: absolute;
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    animation: heatWave 2s ease-in-out infinite;
+  }
+  
+  .heat-waves.with-wind {
+    left: 1%;
+  }
+  
+  @keyframes heatWave {
+    0%, 100% { transform: translateX(-50%) translateY(0px); opacity: 0.7; }
+    50% { transform: translateX(-50%) translateY(-2px); opacity: 1; }
+  }
+  
+  .wind-waves {
+    position: absolute;
+    top: 30px;
+    left: 97%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    animation: windWave 1.5s ease-in-out infinite;
+  }
+  
+  .wind-waves.only-wind {
+    left: 50%;
+  }
+  
+  @keyframes windWave {
+    0%, 100% { transform: translateX(-50%) translateY(0px); opacity: 0.8; }
+    50% { transform: translateX(-50%) translateY(-2px); opacity: 1; }
+  }
+  
+  .icon-text-shadow {
+    color: white;
+    font-size: 1.3em;
+    text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000, 0 0 4px #000, 0 0 1px #000, 0 0 12px #000;
+  }
+  
+  .location-row {
+    margin-top: -2.4px;
+  }
+  
+  .weather-row {
+    margin-top: -4.25px;
+  }
+  </style></head><body class="text-white">
+  
+  <div id="info" class="position-absolute top-0 start-0 d-flex flex-column gap-1 rounded" style="padding:8px;">
+    <div class="d-flex align-items-center fs-5 fw-bold text-shadow text-nowrap"><i class="fa-regular fa-clock info-icon icon-text-shadow me-2"></i><span id="time">--:--:--</span></div>
+    <div class="d-flex align-items-center fs-5 fw-bold text-shadow text-nowrap location-row">
+      <span class="info-icon me-2">
+        <img id="country-flag" class="country-flag" style="width: 20px; height: 15px; border-radius: 2px; transform: translateY(-2px); filter: drop-shadow(-1.8px -1.8px 0 #000) drop-shadow(1.8px -1.8px 0 #000) drop-shadow(-1.8px 1.8px 0 #000) drop-shadow(1.8px 1.8px 0 #000) drop-shadow(0 0 6px #000);" alt="Location" />
+        <i id="location-fallback" class="fa-solid fa-location-dot info-icon icon-text-shadow" style="display: none;"></i>
+      </span>
+      <span id="place">Waiting for GPS…</span>
+    </div>
+    <div class="d-flex align-items-center fs-5 fw-bold text-shadow text-nowrap weather-row">
+      <span class="info-icon me-2">
+        <span id="weather-icon" class="weather-icon">
+          <i id="weather-icon-main" class="fa-solid fa-cloud weather-icon-main"></i>
+          <i id="heat-waves" class="fa-solid fa-water heat-waves" style="display: none;"></i>
+          <img id="wind-waves" class="wind-waves" style="display: none; width: 16px; height: 16px; filter: drop-shadow(-1px -1px 0 #000) drop-shadow(1px -1px 0 #000) drop-shadow(-1px 1px 0 #000) drop-shadow(1px 1px 0 #000) drop-shadow(0 0 4px #000);" alt="Windy" />
+        </span>
+      </span>
+      <span id="weather">--°C</span>
+    </div>
+  </div>
+
+  <script>
+  const placeEl = document.getElementById('place');
+  const weatherEl = document.getElementById('weather');
+  const GOOGLE_GEO_KEY = 'YOUR_KEY';
+  
+  let lastKnownGPSLocation = null;
+  let gpsSuccessful = false;
+  let gpsAttempted = false;
+  let consecutiveGPSFailures = 0;
+  let lastWeatherData = null; // Cache last successful weather
+  let lastWeatherTimestamp = 0; // Track when weather was last fetched
+  
+  // Add location name caching
+  let lastLocationName = null; // Cache last successful location name
+  let lastLocationTimestamp = 0; // Track when location name was last fetched
+  
+  // Connection retry variables
+  let isOnline = navigator.onLine;
+  let retryAttempts = 0;
+  let maxRetryAttempts = 3;
+  let retryTimeouts = [];
+  let hasConnectionIssues = false;
+  
+  // Detect if we're on mobile
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  
+  function tick(){
+    const now = new Date();
+    const dateString = now.toLocaleDateString('en-GB', { year: 'numeric', month: '2-digit', day: '2-digit' });
+    const timeString = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    
+    document.getElementById('time').textContent = `${dateString}, ${timeString}`;
+  }
+  tick(); 
+  // Ensure time updates every second regardless of network issues
+  setInterval(tick, 1000);
+  
+  // Enhanced fetch with retry logic
+  async function fetchWithRetry(url, options = {}, retryCount = 0) {
+    let timeoutId; // Move declaration to function scope
+    try {
+      // Create fresh AbortController for each attempt
+      const controller = new AbortController();
+      timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 5000); // Reduced to 5 seconds for better responsiveness
+      
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      // Reset retry attempts on success
+      retryAttempts = 0;
+      hasConnectionIssues = false;
+      
+      return response;
+    } catch (error) {
+      clearTimeout(timeoutId); // Ensure timeout is cleared on error too
+      console.warn(`Fetch attempt ${retryCount + 1} failed:`, error.message);
+      
+      // Better error categorization
+      const isTimeoutError = error.name === 'AbortError';
+      const isNetworkError = error.name === 'TypeError' || error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION');
+      const isOffline = !navigator.onLine;
+      
+      if (retryCount < maxRetryAttempts && (isTimeoutError || isNetworkError || isOffline)) {
+        hasConnectionIssues = true;
+        const delay = Math.min(1000 * Math.pow(2, retryCount), 8000); // Exponential backoff, max 8 seconds
+        console.log(`Retrying in ${delay}ms...`);
+        
+        return new Promise(resolve => {
+          const timeoutId = setTimeout(async () => {
+            try {
+              const result = await fetchWithRetry(url, options, retryCount + 1);
+              resolve(result);
+            } catch (err) {
+              resolve(Promise.reject(err));
+            }
+          }, delay);
+          retryTimeouts.push(timeoutId);
+        });
+      }
+      
+      throw error;
+    }
+  }
+  
+  async function reverseGeocode(lat, lon){
+    // Detect if we're running locally (file:// protocol) and prioritize Nominatim
+    const isLocalFile = window.location.protocol === 'file:';
+    
+    if (isLocalFile) {
+      console.log('Local file detected, using Nominatim as primary geocoder');
+        return await reverseGeocodeWithNominatim(lat, lon);
+    }
+    
+    // Try Google first for hosted environments
+    try {
+      return await reverseGeocodeWithGoogle(lat, lon);
+    } catch (error) {
+      console.warn('Google geocoding failed, falling back to Nominatim:', error.message);
+      return await reverseGeocodeWithNominatim(lat, lon);
+    }
+  }
+  
+  // Helper function to filter location parts based on word count rules
+  function filterLocationByWordCount(city, state, country) {
+    // Count words in each component (split by spaces and filter out empty strings)
+    const cityWords = city ? city.split(/\s+/).filter(word => word.length > 0).length : 0;
+    const stateWords = state ? state.split(/\s+/).filter(word => word.length > 0).length : 0;
+    const countryWords = country ? country.split(/\s+/).filter(word => word.length > 0).length : 0;
+    
+    console.log('Word count analysis:', {
+      city: city, cityWords: cityWords,
+      state: state, stateWords: stateWords, 
+      country: country, countryWords: countryWords
+    });
+    
+    // Apply the filtering rules:
+    // Hide state if:
+    // 1. City has exactly 2 words AND state has 2+ words AND country has 2+ words, OR
+    // 2. City has 3+ words (regardless of other word counts)
+    
+    let filteredState = state;
+    
+    if (city && state && country) {
+      if (cityWords >= 3) {
+        console.log('Hiding state because city has 3+ words:', cityWords);
+        filteredState = '';
+      } else if (cityWords === 2 && stateWords >= 2 && countryWords >= 2) {
+        console.log('Hiding state due to word count rule: city=2 words, state>=2 words, country>=2 words');
+        filteredState = '';
+      } else {
+        console.log('Keeping state - conditions not met for hiding');
+      }
+    }
+    
+    // Build final parts array with filtered state
+    const parts = [city, filteredState, country].filter(Boolean);
+    console.log('Final location parts after word count filtering:', parts);
+    
+    return parts.join(", ");
+  }
+  
+  async function reverseGeocodeWithGoogle(lat, lon) {
+    const res = await fetchWithRetry(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lon}&key=${GOOGLE_GEO_KEY}&language=en&result_type=locality|administrative_area_level_2|administrative_area_level_1|country`);
+      const data = await res.json();
+      
+      if (data.status === 'OK' && data.results.length > 0) {
+        // Collect all components from all results to make a consistent decision
+        let allCities = [];
+        let allStates = [];
+        let country = '';
+        let isJapan = false;
+        
+        // Process all results to gather comprehensive location data
+        for (let resultIndex = 0; resultIndex < Math.min(data.results.length, 3); resultIndex++) {
+          const result = data.results[resultIndex];
+          const components = result.address_components;
+          
+          components.forEach(component => {
+            const types = component.types;
+            const name = component.long_name;
+            
+            // Check if location is in Japan
+            if (types.includes('country') && (component.short_name === 'JP' || name === 'Japan')) {
+              isJapan = true;
+            }
+            
+            // Collect potential city names with improved priority for specific locations
+            if (types.includes('locality')) {
+              // Highest priority: actual localities (specific places like Punta Cana)
+              allCities.push({ name, priority: 1, type: 'locality', source: `result_${resultIndex}` });
+            } else if (types.includes('sublocality_level_1') || types.includes('sublocality')) {
+              // Second priority: specific sub-areas within cities
+              allCities.push({ name, priority: 2, type: 'sublocality', source: `result_${resultIndex}` });
+            } else if (types.includes('administrative_area_level_2') && !name.includes('County') && !name.includes('District') && !name.includes('Region')) {
+              // Third priority: administrative areas that are actual cities/towns (not just administrative regions)
+              allCities.push({ name, priority: 3, type: 'admin_level_2', source: `result_${resultIndex}` });
+            } else if (types.includes('administrative_area_level_3')) {
+              // Fourth priority: more specific administrative areas
+              allCities.push({ name, priority: 4, type: 'admin_level_3', source: `result_${resultIndex}` });
+            }
+            
+            // Collect state/region names
+            if (types.includes('administrative_area_level_1')) {
+              allStates.push({ name, source: `result_${resultIndex}` });
+            }
+            
+            // Set country (take first one found)
+            if (types.includes('country') && !country) {
+              country = name;
+            }
+          });
+        }
+        
+        console.log('All collected cities:', allCities);
+        console.log('All collected states:', allStates);
+        
+        // Store Japan status globally for weather icon selection
+        window.isLocationInJapan = isJapan;
+        
+        // Deduplicate cities while preserving the most specific ones
+        const uniqueCities = [];
+        allCities.forEach(cityObj => {
+          const isDuplicate = uniqueCities.some(existing => 
+            existing.name.toLowerCase() === cityObj.name.toLowerCase()
+          );
+          if (!isDuplicate) {
+            uniqueCities.push(cityObj);
+          }
+        });
+        
+        // Filter out overly generic or administrative names that aren't specific locations
+        const filteredCities = uniqueCities.filter(cityObj => {
+          const name = cityObj.name;
+          const isGenericAdmin = name.includes('County') || name.includes('District') || 
+                                name.includes('Region') || name.includes('Prefecture') ||
+                                name.includes('Municipality') || name.includes('Province') ||
+                                name.includes('-dong') || name.includes('dong,') || 
+                                   name.includes('(') || name.includes(')') ||
+                                name.includes('Ward');
+          return !isGenericAdmin;
+        });
+        
+        // Sort by priority (lower number = higher priority) to get the most specific location
+        const citiesToConsider = filteredCities.length > 0 ? filteredCities : uniqueCities;
+        citiesToConsider.sort((a, b) => a.priority - b.priority);
+        
+        // Get the best state (most common one)
+        const stateNames = allStates.map(s => s.name);
+        const mostCommonState = stateNames.length > 0 ? stateNames[0] : '';
+        
+        // Select final city and state with consistent redundancy rules
+        let finalCity = '';
+        let finalState = '';
+        
+        if (citiesToConsider.length > 0) {
+          const bestCityObj = citiesToConsider[0];
+          finalCity = bestCityObj.name;
+          
+          console.log('Selected most specific city:', finalCity, 'from type:', bestCityObj.type, 'priority:', bestCityObj.priority);
+          
+          // Apply consistent state inclusion rules
+          if (mostCommonState) {
+            // Always exclude state if it's exactly the same as city (case insensitive)
+            if (finalCity.toLowerCase() === mostCommonState.toLowerCase()) {
+              finalState = '';
+              console.log('Excluding state because it matches city exactly:', finalCity, '==', mostCommonState);
+            }
+            // For Israel specifically, always exclude "Central District", "Northern District", etc. 
+            // when we have a proper city name, as these are administrative regions
+            else if (country === 'Israel' && mostCommonState.toLowerCase().includes('district')) {
+              finalState = '';
+              console.log('Excluding Israeli district for consistency:', mostCommonState);
+            }
+            // For other locations, include state if it adds meaningful information
+            else {
+              // Check if state is a generic administrative name that doesn't add value
+              const genericStateTerms = ['region', 'province', 'territory', 'district', 'area'];
+              const isGenericState = genericStateTerms.some(term => 
+                mostCommonState.toLowerCase().includes(term)
+              );
+              
+              // Include state if it's not generic and provides useful geographic context
+              if (!isGenericState) {
+                finalState = mostCommonState;
+                console.log('Including state for geographic context:', mostCommonState);
+              } else {
+                finalState = '';
+                console.log('Excluding generic state for specificity:', mostCommonState);
+              }
+            }
+          }
+        }
+        
+        // If still no city, try administrative areas as backup
+        if (!finalCity && mostCommonState) {
+          finalCity = mostCommonState;
+          finalState = '';
+          console.log('Using state as city (backup):', finalCity);
+        }
+        
+        // Filter out Israeli districts before assembling final location
+        if (country === 'Israel' && finalState && finalState.toLowerCase().includes('district')) {
+          finalState = '';
+        }
+        
+        // Additional redundancy check for city-states (Singapore, Monaco, Vatican, etc.)
+        if (finalCity && country) {
+          const cityLower = finalCity.toLowerCase();
+          const countryLower = country.toLowerCase();
+          
+          // Special handling for city-states where city equals country
+          if (cityLower === countryLower) {
+            console.log('Detected city-state redundancy:', finalCity, '==', country);
+            
+            // For city-states like Singapore, check if we have a more specific area/neighborhood
+            // Look for the most specific location that isn't the country name
+            const specificAreas = citiesToConsider.filter(cityObj => 
+              cityObj.name.toLowerCase() !== countryLower && 
+              cityObj.priority <= 4 // Only consider specific areas, not generic administrative regions
+            );
+            
+            if (specificAreas.length > 0) {
+              // Sort by priority to get the most specific area
+              specificAreas.sort((a, b) => a.priority - b.priority);
+              const specificArea = specificAreas[0];
+              
+              console.log('Found specific area within city-state:', specificArea.name, 'type:', specificArea.type);
+              finalCity = specificArea.name;
+              // Keep country for context (e.g., "Tampines, Singapore")
+              finalState = ''; // Clear state to avoid triple names
+            } else {
+              // No specific area found, show just the city-state name
+              country = '';
+            }
+          }
+        }
+        
+        // Extract country code for flag display before filtering
+        let countryCode = null;
+        if (data.results && data.results.length > 0) {
+          for (const result of data.results) {
+            const countryComponent = result.address_components.find(comp => 
+              comp.types.includes('country')
+            );
+            if (countryComponent) {
+              countryCode = countryComponent.short_name;
+              break;
+            }
+          }
+        }
+        
+        // Store country info for flag display
+        window.currentCountryName = country;
+        window.currentCountryCode = countryCode;
+        
+        console.log('Google geocoding - before word count filtering:', finalCity, finalState, country);
+        
+        // Apply word count filtering rules
+        return filterLocationByWordCount(finalCity, finalState, country);
+      }
+      
+      // Check for API quota/permission issues
+      if (data.status === 'REQUEST_DENIED' || data.status === 'OVER_QUERY_LIMIT') {
+        console.warn('Google Geocoding API access issue:', data.status, data.error_message);
+        throw new Error(`Google API ${data.status}: ${data.error_message || 'Access denied or quota exceeded'}`);
+      }
+      
+      // Safer fallback - extract only city, state, country from formatted address
+      if (data.results && data.results.length > 0) {
+        const formattedAddr = data.results[0].formatted_address;
+        const addressParts = formattedAddr.split(', ');
+        
+        // Try to extract only the broader location components (last 2-3 parts typically)
+        // Skip detailed addresses like street numbers, building names, etc.
+        const broadParts = addressParts.slice(-3).filter(part => {
+          // Filter out postal codes, detailed street addresses
+          return !part.match(/^\d+/) && // No leading numbers
+                 !part.includes('#') && // No building numbers
+                 !part.includes('Suite') && // No suite numbers
+                 !part.includes('Floor') && // No floor numbers
+                 part.length > 2; // Reasonable length
+        });
+        
+        // Additional redundancy check for formatted address parts
+        const filteredParts = [];
+        broadParts.forEach((part, index) => {
+          const isRedundant = filteredParts.some(existingPart => {
+            const p1 = part.toLowerCase();
+            const p2 = existingPart.toLowerCase();
+            return p1.includes(p2) || p2.includes(p1) || 
+                   p1.replace(/\s+(region|province|state|prefecture|district)$/, '') === p2 ||
+                   p2.replace(/\s+(region|province|state|prefecture|district)$/, '') === p1;
+          });
+          
+          // Filter out Israeli districts specifically
+          const isIsraeliDistrict = part.toLowerCase().includes('district') && 
+                                  broadParts.some(p => p.toLowerCase() === 'israel');
+          
+          if (!isRedundant && !isIsraeliDistrict) {
+            filteredParts.push(part);
+          }
+        });
+        
+        // Additional check for city-states in formatted address fallback
+        if (filteredParts.length > 1) {
+          const lastPart = filteredParts[filteredParts.length - 1];
+          const secondLastPart = filteredParts[filteredParts.length - 2];
+          
+          // If last two parts are identical (city-state case), remove the duplicate
+          if (lastPart.toLowerCase() === secondLastPart.toLowerCase()) {
+            console.log('Detected city-state redundancy in formatted address:', secondLastPart, '==', lastPart);
+            filteredParts.pop(); // Remove the duplicate
+          }
+        }
+        
+        // For fallback formatted address, apply word count filtering if we have 3 parts (city, state, country)
+        if (filteredParts.length === 3) {
+          console.log('Google fallback - applying word count filtering to formatted address parts:', filteredParts);
+          return filterLocationByWordCount(filteredParts[0], filteredParts[1], filteredParts[2]);
+        }
+        
+        return filteredParts.join(", ");
+      }
+      
+      throw new Error('No results from Google Geocoding');
+  }
+  
+  async function reverseGeocodeWithNominatim(lat, lon) {
+    const res = await fetchWithRetry(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=en&addressdetails=1&extratags=1`);
+      const geo = await res.json();
+      const addr = geo.address;
+      
+      console.log('Nominatim address components:', addr);
+      
+      // Check if Japan in Nominatim response
+      window.isLocationInJapan = addr.country_code === 'jp' || addr.country === 'Japan' || addr.country === '日本';
+      
+      // Enhanced Nominatim city name selection prioritizing specific locations
+      let city = '';
+      let state = '';
+      let country = addr.country || '';
+      
+      // Collect all potential city names from Nominatim with updated priorities for specificity
+      let potentialCities = [];
+      
+      // Priority 1: Most specific location designations (actual places)
+      if (addr.city && !addr.city.includes('Capital') && !addr.city.includes('City of')) {
+        potentialCities.push({ name: addr.city, priority: 1, type: 'city' });
+      }
+      if (addr.town && !addr.town.includes('Capital') && !addr.town.includes('City of')) {
+        potentialCities.push({ name: addr.town, priority: 1, type: 'town' });
+      }
+      if (addr.village && !addr.village.includes('Capital') && !addr.village.includes('City of')) {
+        potentialCities.push({ name: addr.village, priority: 1, type: 'village' });
+      }
+      
+      // Priority 2: Specific settlements and localities (like resort areas, specific neighborhoods)
+      if (addr.hamlet) {
+        potentialCities.push({ name: addr.hamlet, priority: 2, type: 'hamlet' });
+      }
+      if (addr.locality && addr.locality !== addr.city && addr.locality !== addr.town) {
+        potentialCities.push({ name: addr.locality, priority: 2, type: 'locality' });
+      }
+      if (addr.quarter && addr.quarter !== addr.city && addr.quarter !== addr.town) {
+        potentialCities.push({ name: addr.quarter, priority: 2, type: 'quarter' });
+      }
+      if (addr.residential && addr.residential !== addr.city && addr.residential !== addr.town) {
+        potentialCities.push({ name: addr.residential, priority: 2, type: 'residential' });
+      }
+      
+      // Priority 3: Municipality names (often the actual city name)
+      if (addr.municipality && addr.municipality !== addr.city && addr.municipality !== addr.town) {
+        potentialCities.push({ name: addr.municipality, priority: 3, type: 'municipality' });
+      }
+      
+      // Priority 4: Suburban/district areas (more specific than administrative regions)
+      if (addr.suburb && addr.suburb !== addr.city && addr.suburb !== addr.town) {
+        potentialCities.push({ name: addr.suburb, priority: 4, type: 'suburb' });
+      }
+      if (addr.neighbourhood && addr.neighbourhood !== addr.city && addr.neighbourhood !== addr.town) {
+        potentialCities.push({ name: addr.neighbourhood, priority: 4, type: 'neighbourhood' });
+      }
+      
+      // Priority 5: County as city name (only if it's not just "County")
+      if (addr.county && addr.county !== addr.city && addr.county !== addr.town && !addr.county.includes('County')) {
+        potentialCities.push({ name: addr.county, priority: 5, type: 'county' });
+      }
+      
+      // Priority 6: State/region as last resort (least specific)
+      if (addr.state && addr.state !== addr.city && addr.state !== addr.town) {
+        potentialCities.push({ name: addr.state, priority: 6, type: 'state_as_city' });
+      }
+      
+      console.log('Nominatim potential cities:', potentialCities);
+      
+      // Filter out overly detailed districts and administrative names
+      const filteredCities = potentialCities.filter(cityObj => {
+        const name = cityObj.name;
+        const isDetailedDistrict = name.includes('-dong') || name.includes('dong,') || 
+                                 name.includes('(') || name.includes(')') ||
+                                 name.includes('Ward') || name.includes('District') ||
+                                 name.includes('Capital') || name.includes('City of') ||
+                                 name.includes('County') || name.includes('Region');
+        return !isDetailedDistrict;
+      });
+      
+      // Choose the most specific city name (lowest priority number = most specific)
+      if (filteredCities.length > 0) {
+        // Sort by priority (lower number = higher priority = more specific)
+        filteredCities.sort((a, b) => a.priority - b.priority);
+        const bestCity = filteredCities[0];
+        city = bestCity.name;
+        console.log('Selected most specific Nominatim city:', city, 'from type:', bestCity.type, 'priority:', bestCity.priority);
+        
+        // Don't use state as city if we found a real city
+        if (bestCity.type === 'state_as_city') {
+          state = ''; // Don't duplicate state
+        } else {
+          // Set state normally if we found a real city
+          if (addr.state && addr.state !== city && !addr.state.includes('Capital') && !addr.state.includes('City of')) {
+            state = addr.state;
+          }
+        }
+      } else if (potentialCities.length > 0) {
+        // Use unfiltered if filtered list is empty
+        potentialCities.sort((a, b) => a.priority - b.priority);
+        const bestCity = potentialCities[0];
+        city = bestCity.name.replace(/^Capital City of /, '');
+        console.log('Selected Nominatim city (unfiltered):', city, 'from type:', bestCity.type);
+        
+        if (bestCity.type === 'state_as_city') {
+          state = '';
+        } else if (addr.state && addr.state !== city) {
+          state = addr.state;
+        }
+      }
+      
+      // Enhanced redundancy removal for Nominatim
+      if (city && state) {
+        const cityLower = city.toLowerCase();
+        const stateLower = state.toLowerCase();
+        
+        const isRedundant = cityLower === stateLower ||
+                           cityLower.includes(stateLower) || 
+                           stateLower.includes(cityLower) ||
+                           cityLower === stateLower.replace(/\s+(region|province|state|prefecture|district|county)$/, '') ||
+                           stateLower === cityLower.replace(/\s+(region|province|state|prefecture|district|county)$/, '');
+        
+        if (isRedundant) {
+          console.log('Detected Nominatim redundancy between city and state:', city, '/', state);
+          // Prefer the shorter, more specific name
+          if (city.length <= state.length) {
+            state = ''; // Keep city, remove state
+          } else {
+            city = state; // Use state as city
+            state = '';
+          }
+        }
+      }
+      
+      // Additional redundancy check for city-states (Singapore, Monaco, Vatican, etc.)
+      if (city && country) {
+        const cityLower = city.toLowerCase();
+        const countryLower = country.toLowerCase();
+        
+        // Special handling for city-states where city equals country
+        if (cityLower === countryLower) {
+          console.log('Detected city-state redundancy:', city, '==', country);
+          
+          // For city-states like Singapore, check if we have a more specific area/neighborhood
+          // Look for the most specific location that isn't the country name
+          const specificAreas = potentialCities.filter(cityObj => 
+            cityObj.name.toLowerCase() !== countryLower && 
+            cityObj.priority <= 4 // Only consider specific areas, not generic administrative regions
+          );
+          
+          if (specificAreas.length > 0) {
+            // Sort by priority to get the most specific area
+            specificAreas.sort((a, b) => a.priority - b.priority);
+            const specificArea = specificAreas[0];
+            
+            console.log('Found specific area within city-state:', specificArea.name, 'type:', specificArea.type);
+            city = specificArea.name;
+            // Keep country for context (e.g., "Tampines, Singapore")
+            state = ''; // Clear state to avoid triple names
+          } else {
+            // No specific area found, show just the city-state name
+            country = '';
+          }
+        }
+      }
+      
+      // Filter out Israeli districts before assembling final location
+      if (country === 'Israel' && state && state.toLowerCase().includes('district')) {
+        state = '';
+      }
+      
+      // Store country info for flag display before filtering
+      window.currentCountryName = country;
+      window.currentCountryCode = addr.country_code ? addr.country_code.toUpperCase() : null;
+      
+      console.log('Nominatim geocoding - before word count filtering:', city, state, country);
+      
+      // Apply word count filtering rules
+      return filterLocationByWordCount(city, state, country);
+  }
+  
+  // Google Weather condition mapping for Open-Meteo weather codes
+  const googleWeatherCodes = {
+    0: { condition: 'CLEAR', description: 'Clear' },
+    1: { condition: 'MOSTLY_CLEAR', description: 'Few Clouds' },
+    2: { condition: 'PARTLY_CLOUDY', description: 'Few Clouds' },
+    3: { condition: 'MOSTLY_CLOUDY', description: 'Cloudy' },
+    45: { condition: 'FOG', description: 'Fog' },
+    48: { condition: 'FOG', description: 'Depositing Rime Fog' },
+    51: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Light Drizzle' },
+    53: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Moderate Drizzle' },
+    55: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Dense Drizzle' },
+    56: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Light Freezing Drizzle' },
+    57: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Dense Freezing Drizzle' },
+    61: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Light Rain' },
+    63: { condition: 'RAIN_SHOWERS', description: 'Moderate Rain' },
+    65: { condition: 'HEAVY_RAIN_SHOWERS', description: 'Heavy Rain' },
+    66: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Light Freezing Rain' },
+    67: { condition: 'HEAVY_RAIN_SHOWERS', description: 'Heavy Freezing Rain' },
+    71: { condition: 'LIGHT_SNOW', description: 'Light Snow' },
+    73: { condition: 'SNOW', description: 'Moderate Snow' },
+    75: { condition: 'HEAVY_SNOW', description: 'Heavy Snow' },
+    77: { condition: 'LIGHT_SNOW', description: 'Snow Grains' },
+    80: { condition: 'LIGHT_RAIN_SHOWERS', description: 'Light Rain' },
+    81: { condition: 'RAIN_SHOWERS', description: 'Moderate Rain' },
+    82: { condition: 'HEAVY_RAIN_SHOWERS', description: 'Heavy Rain' },
+    85: { condition: 'LIGHT_SNOW_SHOWERS', description: 'Light Snow' },
+    86: { condition: 'HEAVY_SNOW_SHOWERS', description: 'Snow Showers' },
+    95: { condition: 'THUNDERSTORM', description: 'Thunderstorm' },
+    96: { condition: 'THUNDERSTORM', description: 'Thunderstorm with Light Hail' },
+    99: { condition: 'THUNDERSTORM', description: 'Thunderstorm with Heavy Hail' }
+  };
+  
+  // Function to get Google weather icon URL based on weather code and time
+  function getGoogleWeatherIcon(weatherCode, isDay = true, condition = null) {
+    // Use passed condition or derive from weather code
+    const finalCondition = condition || googleWeatherCodes[weatherCode]?.condition || 'CLOUDY';
+    
+    // Repository base URL for v4 icons (now primary for everyone)
+    const repoBaseUrl = 'https://maps.gstatic.com/weather/v1/';
+    const fallbackUrl = 'https://maps.gstatic.com/weather/v1/';
+    
+    // Standard Google Maps weather icon mapping for fallback
+    const standardIconMap = {
+      'CLEAR': isDay ? 'sunny.svg' : 'clear.svg',
+      'MOSTLY_CLEAR': isDay ? 'mostly_sunny.svg' : 'mostly_clear.svg',
+      'PARTLY_CLOUDY': isDay ? 'party_cloudy.svg' : 'partly_clear.svg',
+      'MOSTLY_CLOUDY': isDay ? 'cloudy.svg' : 'cloudy.svg',
+      'CLOUDY': 'cloudy.svg',
+      'FOG': 'fog.svg',
+      'LIGHT_RAIN_SHOWERS': 'drizzle.svg',
+      'RAIN_SHOWERS': 'showers.svg',
+      'HEAVY_RAIN_SHOWERS': 'heavy.svg',
+      'LIGHT_RAIN': 'drizzle.svg',
+      'RAIN': 'rain.svg',
+      'HEAVY_RAIN': 'heavy.svg',
+      'LIGHT_SNOW_SHOWERS': 'flurries.svg',
+      'SNOW_SHOWERS': 'snow_showers.svg',
+      'HEAVY_SNOW_SHOWERS': 'heavy_snow.svg',
+      'LIGHT_SNOW': 'flurries.svg',
+      'SNOW': 'snow_showers.svg',
+      'HEAVY_SNOW': 'heavy_snow.svg',
+      'SNOWSTORM': 'snow_showers.svg',
+      'SNOW_PERIODICALLY_HEAVY': 'heavy_snow.svg',
+      'HEAVY_SNOW_STORM': 'heavy_snow.svg',
+      'BLOWING_SNOW': 'blowing_snow.svg',
+      'RAIN_AND_SNOW': 'wintry_mix.svg',
+      'HAIL': 'sleet_hail.svg',
+      'HAIL_SHOWERS': 'wintry_mix.svg',
+      'THUNDERSTORM': 'strong_tstorms.svg',
+      'THUNDERSHOWER': 'strong_tstorms.svg',
+      'LIGHT_THUNDERSTORM_RAIN': 'strong_tstorms.svg',
+      'SCATTERED_THUNDERSTORMS': 'isolated_tstorms.svg',
+      'HEAVY_THUNDERSTORM': 'strong_tstorms.svg'
+    };
+    
+    // v4 repository weather icon mapping (now primary for everyone)
+    const v4IconMap = {
+      'CLEAR': isDay ? 'clear_day.svg' : 'clear_night.svg',
+      'MOSTLY_CLEAR': isDay ? 'mostly_clear_day.svg' : 'mostly_clear_night.svg',
+      'PARTLY_CLOUDY': isDay ? 'partly_cloudy_day.svg' : 'partly_cloudy_night.svg',
+      'MOSTLY_CLOUDY': isDay ? 'mostly_cloudy_day.svg' : 'mostly_cloudy_night.svg',
+      'CLOUDY': 'cloudy.svg',
+      'FOG': 'haze_fog_dust_smoke.svg',
+      'LIGHT_RAIN_SHOWERS': 'drizzle.svg',
+      'RAIN_SHOWERS': isDay ? 'scattered_showers_day.svg' : 'scattered_showers_night.svg',
+      'HEAVY_RAIN_SHOWERS': 'showers_rain.svg',
+      'LIGHT_RAIN': isDay ? 'rain_with_cloudy_light.svg' : 'rain_with_cloudy_dark.svg',
+      'RAIN': isDay ? 'rain_with_cloudy_light.svg' : 'rain_with_cloudy_dark.svg',
+      'HEAVY_RAIN': 'heavy_rain.svg',
+      'LIGHT_SNOW_SHOWERS': isDay ? 'scattered_snow_showers_day.svg' : 'scattered_snow_showers_night.svg',
+      'SNOW_SHOWERS': 'showers_snow.svg',
+      'HEAVY_SNOW_SHOWERS': 'showers_snow.svg',
+      'LIGHT_SNOW': isDay ? 'snow_with_cloudy_light.svg' : 'snow_with_cloudy_dark.svg',
+      'SNOW': isDay ? 'snow_with_cloudy_light.svg' : 'snow_with_cloudy_dark.svg',
+      'HEAVY_SNOW': 'heavy_snow.svg',
+      'SNOWSTORM': 'heavy_snow.svg',
+      'SNOW_PERIODICALLY_HEAVY': 'heavy_snow.svg',
+      'HEAVY_SNOW_STORM': 'heavy_snow.svg',
+      'BLOWING_SNOW': 'blowing_snow.svg',
+      'RAIN_AND_SNOW': 'mixed_rain_snow.svg',
+      'HAIL': 'sleet_hail.svg',
+      'HAIL_SHOWERS': 'mixed_rain_hail_sleet.svg',
+      'THUNDERSTORM': isDay ? 'isolated_scattered_thunderstorms_day.svg' : 'isolated_scattered_thunderstorms_night.svg',
+      'THUNDERSHOWER': isDay ? 'isolated_scattered_thunderstorms_day.svg' : 'isolated_scattered_thunderstorms_night.svg',
+      'LIGHT_THUNDERSTORM_RAIN': isDay ? 'isolated_scattered_thunderstorms_day.svg' : 'isolated_scattered_thunderstorms_night.svg',
+      'SCATTERED_THUNDERSTORMS': isDay ? 'isolated_scattered_thunderstorms_day.svg' : 'isolated_scattered_thunderstorms_night.svg',
+      'HEAVY_THUNDERSTORM': 'isolated_thunderstorms.svg',
+      'ICY': 'icy.svg',
+      'BLIZZARD': 'blizzard.svg',
+      'TORNADO': 'tornado.svg',
+      'TROPICAL_STORM': 'tropical_storm_hurricane.svg',
+      'VERY_HOT': 'very_hot.svg',
+      'VERY_COLD': 'very_cold.svg'
+    };
+    
+    // Use v4 repository icons as primary for everyone, with Google Maps as fallback
+    const v4Icon = v4IconMap[finalCondition] || 'cloudy.svg';
+    const fallbackIcon = standardIconMap[finalCondition] || 'cloudy.svg';
+    
+    console.log('🎌 Using v4 repository weather icon (primary):', v4Icon, 'for condition:', finalCondition);
+    return {
+      primary: repoBaseUrl + v4Icon,
+      fallback: fallbackUrl + fallbackIcon
+    };
+  }
+  
+  // Enhanced heat wave detection based on regional climate context
+  function determineHeatWaveThreshold(lat) {
+    // Regional temperature thresholds based on latitude and typical climate zones
+    const tempThresholds = {
+      // Arctic/Subarctic (above 60°N)
+      arctic: { threshold: 20, region: 'Arctic' },
+      // Northern temperate (45-60°N)  
+      northTemperate: { threshold: 28, region: 'Northern Temperate' },
+      // Mid temperate (30-45°N)
+      midTemperate: { threshold: 32, region: 'Mid Temperate' },
+      // Subtropical (15-30°N)
+      subtropical: { threshold: 35, region: 'Subtropical' },
+      // Tropical (0-15°N)
+      tropical: { threshold: 38, region: 'Tropical' },
+      // Southern hemisphere equivalents
+      southTropical: { threshold: 38, region: 'South Tropical' },
+      southSubtropical: { threshold: 35, region: 'South Subtropical' },
+      southTemperate: { threshold: 32, region: 'South Temperate' }
+    };
+    
+    const absLat = Math.abs(lat);
+    
+    if (absLat >= 60) return tempThresholds.arctic;
+    if (absLat >= 45) return lat > 0 ? tempThresholds.northTemperate : tempThresholds.southTemperate;
+    if (absLat >= 30) return tempThresholds.midTemperate;
+    if (absLat >= 15) return lat > 0 ? tempThresholds.subtropical : tempThresholds.southSubtropical;
+    return lat > 0 ? tempThresholds.tropical : tempThresholds.southTropical;
+  }
+  
+  // Country flag system - maps country names and codes to flag filenames
+  const countryFlagMap = {
+    // Country codes (ISO 3166-1 alpha-2) - preferred format
+    'US': 'us.svg', 'CA': 'ca.svg', 'GB': 'gb.svg', 'DE': 'de.svg', 'FR': 'fr.svg',
+    'IT': 'it.svg', 'ES': 'es.svg', 'PT': 'pt.svg', 'NL': 'nl.svg', 'BE': 'be.svg',
+    'CH': 'ch.svg', 'AT': 'at.svg', 'SE': 'se.svg', 'NO': 'no.svg', 'DK': 'dk.svg',
+    'FI': 'fi.svg', 'IS': 'is.svg', 'IE': 'ie.svg', 'LU': 'lu.svg', 'MC': 'mc.svg',
+    'AD': 'ad.svg', 'SM': 'sm.svg', 'VA': 'va.svg', 'MT': 'mt.svg', 'CY': 'cy.svg',
+    'GR': 'gr.svg', 'BG': 'bg.svg', 'RO': 'ro.svg', 'HU': 'hu.svg', 'CZ': 'cz.svg',
+    'SK': 'sk.svg', 'PL': 'pl.svg', 'LT': 'lt.svg', 'LV': 'lv.svg', 'EE': 'ee.svg',
+    'RU': 'ru.svg', 'BY': 'by.svg', 'UA': 'ua.svg', 'MD': 'md.svg', 'RS': 'rs.svg',
+    'ME': 'me.svg', 'BA': 'ba.svg', 'HR': 'hr.svg', 'SI': 'si.svg', 'MK': 'mk.svg',
+    'AL': 'al.svg', 'XK': 'xk.svg', 'JP': 'jp.svg', 'KR': 'kr.svg', 'CN': 'cn.svg',
+    'TW': 'tw.svg', 'HK': 'hk.svg', 'MO': 'mo.svg', 'SG': 'sg.svg', 'MY': 'my.svg',
+    'TH': 'th.svg', 'VN': 'vn.svg', 'PH': 'ph.svg', 'ID': 'id.svg', 'BN': 'bn.svg',
+    'IN': 'in.svg', 'PK': 'pk.svg', 'BD': 'bd.svg', 'LK': 'lk.svg', 'MV': 'mv.svg',
+    'NP': 'np.svg', 'BT': 'bt.svg', 'MM': 'mm.svg', 'KH': 'kh.svg', 'LA': 'la.svg',
+    'MN': 'mn.svg', 'KZ': 'kz.svg', 'KG': 'kg.svg', 'TJ': 'tj.svg', 'UZ': 'uz.svg',
+    'TM': 'tm.svg', 'AF': 'af.svg', 'IR': 'ir.svg', 'IQ': 'iq.svg', 'SY': 'sy.svg',
+    'LB': 'lb.svg', 'JO': 'jo.svg', 'PS': 'ps.svg', 'IL': 'il.svg', 'TR': 'tr.svg',
+    'AM': 'am.svg', 'AZ': 'az.svg', 'GE': 'ge.svg', 'SA': 'sa.svg', 'AE': 'ae.svg',
+    'QA': 'qa.svg', 'KW': 'kw.svg', 'BH': 'bh.svg', 'OM': 'om.svg', 'YE': 'ye.svg',
+    'EG': 'eg.svg', 'LY': 'ly.svg', 'TN': 'tn.svg', 'DZ': 'dz.svg', 'MA': 'ma.svg',
+    'SD': 'sd.svg', 'SS': 'ss.svg', 'ET': 'et.svg', 'ER': 'er.svg', 'DJ': 'dj.svg',
+    'SO': 'so.svg', 'KE': 'ke.svg', 'UG': 'ug.svg', 'TZ': 'tz.svg', 'RW': 'rw.svg',
+    'BI': 'bi.svg', 'MG': 'mg.svg', 'MU': 'mu.svg', 'SC': 'sc.svg', 'KM': 'km.svg',
+    'ZA': 'za.svg', 'ZW': 'zw.svg', 'BW': 'bw.svg', 'NA': 'na.svg', 'SZ': 'sz.svg',
+    'LS': 'ls.svg', 'MZ': 'mz.svg', 'MW': 'mw.svg', 'ZM': 'zm.svg', 'AO': 'ao.svg',
+    'CD': 'cd.svg', 'CG': 'cg.svg', 'CF': 'cf.svg', 'TD': 'td.svg', 'CM': 'cm.svg',
+    'GQ': 'gq.svg', 'GA': 'ga.svg', 'ST': 'st.svg', 'NG': 'ng.svg', 'BJ': 'bj.svg',
+    'TG': 'tg.svg', 'GH': 'gh.svg', 'CI': 'ci.svg', 'LR': 'lr.svg', 'SL': 'sl.svg',
+    'GN': 'gn.svg', 'GW': 'gw.svg', 'SN': 'sn.svg', 'GM': 'gm.svg', 'ML': 'ml.svg',
+    'BF': 'bf.svg', 'NE': 'ne.svg', 'MR': 'mr.svg', 'AU': 'au.svg', 'NZ': 'nz.svg',
+    'PG': 'pg.svg', 'FJ': 'fj.svg', 'SB': 'sb.svg', 'VU': 'vu.svg', 'NC': 'nc.svg',
+    'PF': 'pf.svg', 'WS': 'ws.svg', 'TO': 'to.svg', 'TV': 'tv.svg', 'KI': 'ki.svg',
+    'NR': 'nr.svg', 'PW': 'pw.svg', 'FM': 'fm.svg', 'MH': 'mh.svg', 'MX': 'mx.svg',
+    'GT': 'gt.svg', 'BZ': 'bz.svg', 'SV': 'sv.svg', 'HN': 'hn.svg', 'NI': 'ni.svg',
+    'CR': 'cr.svg', 'PA': 'pa.svg', 'CU': 'cu.svg', 'JM': 'jm.svg', 'HT': 'ht.svg',
+    'DO': 'do.svg', 'PR': 'pr.svg', 'TT': 'tt.svg', 'BB': 'bb.svg', 'LC': 'lc.svg',
+    'VC': 'vc.svg', 'GD': 'gd.svg', 'AG': 'ag.svg', 'DM': 'dm.svg', 'KN': 'kn.svg',
+    'BS': 'bs.svg', 'VE': 've.svg', 'GY': 'gy.svg', 'SR': 'sr.svg', 'BR': 'br.svg',
+    'CO': 'co.svg', 'EC': 'ec.svg', 'PE': 'pe.svg', 'BO': 'bo.svg', 'PY': 'py.svg',
+    'AR': 'ar.svg', 'UY': 'uy.svg', 'CL': 'cl.svg', 'FK': 'fk.svg', 'GS': 'gs.svg',
+    // Country names (fallback)
+    'United States': 'us.svg', 'Canada': 'ca.svg', 'United Kingdom': 'gb.svg',
+    'Germany': 'de.svg', 'France': 'fr.svg', 'Italy': 'it.svg', 'Spain': 'es.svg',
+    'Portugal': 'pt.svg', 'Netherlands': 'nl.svg', 'Belgium': 'be.svg',
+    'Switzerland': 'ch.svg', 'Austria': 'at.svg', 'Sweden': 'se.svg', 'Norway': 'no.svg',
+    'Denmark': 'dk.svg', 'Finland': 'fi.svg', 'Iceland': 'is.svg', 'Ireland': 'ie.svg',
+    'Japan': 'jp.svg', 'South Korea': 'kr.svg', 'China': 'cn.svg', 'Taiwan': 'tw.svg',
+    'Hong Kong': 'hk.svg', 'Singapore': 'sg.svg', 'Malaysia': 'my.svg', 'Thailand': 'th.svg',
+    'Vietnam': 'vn.svg', 'Philippines': 'ph.svg', 'Indonesia': 'id.svg', 'India': 'in.svg',
+    'Pakistan': 'pk.svg', 'Bangladesh': 'bd.svg', 'Sri Lanka': 'lk.svg', 'Nepal': 'np.svg',
+    'Australia': 'au.svg', 'New Zealand': 'nz.svg', 'Mexico': 'mx.svg', 'Brazil': 'br.svg',
+    'Argentina': 'ar.svg', 'Chile': 'cl.svg', 'Colombia': 'co.svg', 'Peru': 'pe.svg',
+    'Venezuela': 've.svg', 'Ecuador': 'ec.svg', 'Uruguay': 'uy.svg', 'Paraguay': 'py.svg',
+    'Bolivia': 'bo.svg', 'Israel': 'il.svg', 'Turkey': 'tr.svg', 'Russia': 'ru.svg',
+    'Ukraine': 'ua.svg', 'Poland': 'pl.svg', 'Czech Republic': 'cz.svg', 'Hungary': 'hu.svg',
+    'Romania': 'ro.svg', 'Bulgaria': 'bg.svg', 'Greece': 'gr.svg', 'Croatia': 'hr.svg',
+    'Serbia': 'rs.svg', 'Bosnia and Herzegovina': 'ba.svg', 'Montenegro': 'me.svg',
+    'Slovenia': 'si.svg', 'Slovakia': 'sk.svg', 'Estonia': 'ee.svg', 'Latvia': 'lv.svg',
+    'Lithuania': 'lt.svg', 'Belarus': 'by.svg', 'Moldova': 'md.svg', 'Albania': 'al.svg',
+    'North Macedonia': 'mk.svg', 'Kosovo': 'xk.svg', 'Cyprus': 'cy.svg', 'Malta': 'mt.svg',
+    'Luxembourg': 'lu.svg', 'Monaco': 'mc.svg', 'San Marino': 'sm.svg', 'Vatican City': 'va.svg',
+    'Andorra': 'ad.svg', 'South Africa': 'za.svg', 'Egypt': 'eg.svg', 'Morocco': 'ma.svg',
+    'Nigeria': 'ng.svg', 'Kenya': 'ke.svg', 'Ghana': 'gh.svg', 'Ethiopia': 'et.svg',
+    'Tanzania': 'tz.svg', 'Uganda': 'ug.svg', 'Madagascar': 'mg.svg', 'Cameroon': 'cm.svg',
+    'Saudi Arabia': 'sa.svg', 'United Arab Emirates': 'ae.svg', 'Qatar': 'qa.svg',
+    'Kuwait': 'kw.svg', 'Bahrain': 'bh.svg', 'Oman': 'om.svg', 'Yemen': 'ye.svg',
+    'Jordan': 'jo.svg', 'Lebanon': 'lb.svg', 'Syria': 'sy.svg', 'Iraq': 'iq.svg',
+    'Iran': 'ir.svg', 'Afghanistan': 'af.svg', 'Kazakhstan': 'kz.svg', 'Uzbekistan': 'uz.svg',
+    'Turkmenistan': 'tm.svg', 'Kyrgyzstan': 'kg.svg', 'Tajikistan': 'tj.svg',
+    'Mongolia': 'mn.svg', 'Myanmar': 'mm.svg', 'Cambodia': 'kh.svg', 'Laos': 'la.svg'
+  };
+  
+  // Function to get country flag icon URLs
+  function getCountryFlagIcon(countryName, countryCode) {
+    // Repository base URL for 4x3 flag icons
+    const repoBaseUrl = '';
+    
+    // Try country code first (more reliable)
+    let flagFile = null;
+    
+    if (countryCode) {
+      const codeUpper = countryCode.toUpperCase();
+      flagFile = countryFlagMap[codeUpper];
+      console.log('Flag lookup by country code:', codeUpper, '->', flagFile);
+    }
+    
+    // Fallback to country name
+    if (!flagFile && countryName) {
+      flagFile = countryFlagMap[countryName];
+      console.log('Flag lookup by country name:', countryName, '->', flagFile);
+    }
+    
+    // Additional fallback for common country name variations
+    if (!flagFile && countryName) {
+      const nameVariations = {
+        'United States of America': 'us.svg',
+        'USA': 'us.svg',
+        'U.S.A.': 'us.svg',
+        'America': 'us.svg',
+        'Great Britain': 'gb.svg',
+        'UK': 'gb.svg',
+        'U.K.': 'gb.svg',
+        'England': 'gb.svg',
+        'Scotland': 'gb.svg',
+        'Wales': 'gb.svg',
+        'Northern Ireland': 'gb.svg',
+        'South Korea': 'kr.svg',
+        'Republic of Korea': 'kr.svg',
+        'North Korea': 'kp.svg',
+        'Czech Republic': 'cz.svg',
+        'Czechia': 'cz.svg',
+        'Vatican': 'va.svg',
+        'Holy See': 'va.svg',
+        'The Vatican': 'va.svg',
+        'Republic of China': 'tw.svg',
+        'Chinese Taipei': 'tw.svg',
+        'Hong Kong SAR': 'hk.svg',
+        'Macao SAR': 'mo.svg',
+        'Macau': 'mo.svg',
+        'Democratic Republic of the Congo': 'cd.svg',
+        'DR Congo': 'cd.svg',
+        'Republic of the Congo': 'cg.svg',
+        'Congo': 'cg.svg',
+        'Ivory Coast': 'ci.svg',
+        'Côte d\'Ivoire': 'ci.svg'
+      };
+      
+      flagFile = nameVariations[countryName];
+      if (flagFile) {
+        console.log('Flag lookup by name variation:', countryName, '->', flagFile);
+      }
+    }
+    
+    if (flagFile) {
+      return {
+        primary: repoBaseUrl + flagFile,
+        hasFlag: true,
+        country: countryName || countryCode
+      };
+    } else {
+      console.log('No flag found for:', countryName, countryCode);
+      return {
+        primary: null,
+        hasFlag: false,
+        country: countryName || countryCode
+      };
+    }
+  }
+  
+  // Function to update country flag display
+  function updateCountryFlag(countryName, countryCode) {
+    const flagImg = document.getElementById('country-flag');
+    const fallbackIcon = document.getElementById('location-fallback');
+    
+    if (!flagImg || !fallbackIcon) {
+      console.log('Flag elements not found:', { flagImg: !!flagImg, fallbackIcon: !!fallbackIcon });
+      return;
+    }
+    
+    const flagInfo = getCountryFlagIcon(countryName, countryCode);
+    
+    if (flagInfo.hasFlag) {
+      // Hide fallback icon and show flag
+      fallbackIcon.style.display = 'none';
+      flagImg.style.display = 'inline-block';
+      
+      // Set up error handler for flag loading
+      flagImg.onerror = function() {
+        console.log('Flag icon failed to load, showing fallback location icon');
+        console.log('Failed flag URL:', flagInfo.primary);
+        console.log('Error details:', this.src, this.complete, this.naturalWidth, this.naturalHeight);
+        flagImg.style.display = 'none';
+        fallbackIcon.style.display = 'inline-block';
+      };
+      
+      // Set up success handler
+      flagImg.onload = function() {
+        console.log('Flag icon loaded successfully:', flagInfo.primary);
+        console.log('Image dimensions:', this.naturalWidth, 'x', this.naturalHeight);
+        flagImg.style.display = 'inline-block';
+        fallbackIcon.style.display = 'none';
+      };
+      
+      // Set flag source
+      flagImg.src = flagInfo.primary;
+      flagImg.alt = `Flag of ${flagInfo.country}`;
+      
+      console.log('🏁 Showing flag for:', flagInfo.country);
+      console.log('Flag URL:', flagInfo.primary);
+    } else {
+      // No flag available, show fallback location icon
+      flagImg.style.display = 'none';
+      fallbackIcon.style.display = 'inline-block';
+      console.log('📍 No flag available, showing location icon for:', countryName || countryCode);
+    }
+  }
+  
+  // Test function to manually test flag loading
+  function testFlag(countryName, countryCode) {
+    console.log('=== FLAG TEST ===');
+    console.log('Testing flag for:', countryName, countryCode);
+    
+    // Test the flag lookup
+    const flagInfo = getCountryFlagIcon(countryName, countryCode);
+    console.log('Flag info:', flagInfo);
+    
+    // Test updating the flag
+    updateCountryFlag(countryName, countryCode);
+    
+    // Test direct URL access
+    if (flagInfo.hasFlag) {
+      console.log('Testing direct URL access...');
+      fetch(flagInfo.primary)
+        .then(response => {
+          console.log('URL fetch response:', response.status, response.statusText);
+          return response.text();
+        })
+        .then(text => {
+          console.log('Flag file content length:', text.length);
+          console.log('Flag file preview:', text.substring(0, 200) + '...');
+        })
+        .catch(error => {
+          console.error('Flag URL fetch error:', error);
+        });
+    }
+  }
+  
+  // Add test function to global scope for debugging
+  window.testFlag = testFlag;
+  
+  async function fetchWeather(lat, lon){
+    try {
+      lastWeatherTimestamp = Date.now(); // Track fetch attempt time
+      const r = await fetchWithRetry(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code,is_day,wind_speed_10m,precipitation,visibility&timezone=auto`);
+      const j = await r.json();
+      const c = Math.round(j.current.temperature_2m);
+      const f = Math.round(c * 9 / 5 + 32);
+      const isDay = j.current.is_day === 1;
+      
+      // Enhanced weather condition detection using multiple parameters
+      let weatherInfo = googleWeatherCodes[j.current.weather_code] || { condition: 'CLOUDY', description: 'Cloudy' };
+      let condition = weatherInfo.condition;
+      let desc = weatherInfo.description;
+      
+      // Enhanced condition logic using additional parameters
+      const windSpeed = j.current.wind_speed_10m || 0;
+      const precipitation = j.current.precipitation || 0;
+      const visibility = j.current.visibility || 10000;
+      
+      // Wind conditions - now as secondary effects only
+      let isWindy = windSpeed > 18; // Lowered from 20 to 10 km/h
+      let isVeryWindy = windSpeed > 35; // Lowered from 40 to 25 km/h
+      
+      
+      // Add debug logging for wind detection
+      console.log('Wind speed:', windSpeed, 'km/h, isWindy:', isWindy, 'isVeryWindy:', isVeryWindy);
+      
+      // Don't override main weather condition for wind - keep original condition
+      // Wind will be shown as secondary effect below
+      
+      // Visibility-based conditions
+      if (visibility < 1000) {
+        if (j.current.weather_code === 45 || j.current.weather_code === 48) {
+          // Keep existing fog mapping
+        } else if (c < 0 && (j.current.weather_code >= 71 && j.current.weather_code <= 77)) {
+          condition = 'BLOWING_SNOW';
+          desc = 'Blowing Snow';
+        }
+      }
+      
+      // Enhanced snow conditions based on intensity and temperature
+      if (j.current.weather_code >= 71 && j.current.weather_code <= 77) {
+        if (c < -10 && windSpeed > 30) {
+          condition = 'BLIZZARD';
+          desc = 'Blizzard';
+        } else if (j.current.weather_code === 75 && windSpeed > 20) {
+          condition = 'SNOWSTORM';
+          desc = 'Snowstorm';
+        } else if (c < -15) {
+          condition = 'HEAVY_SNOW_STORM';
+          desc = 'Heavy Snow Storm';
+        }
+      }
+      
+      // Enhanced rain conditions
+      if (j.current.weather_code >= 61 && j.current.weather_code <= 67) {
+        if (j.current.weather_code <= 63) {
+          condition = 'LIGHT_RAIN';
+          desc = 'Light Rain';
+        } else if (j.current.weather_code >= 65) {
+          condition = 'HEAVY_RAIN';
+          desc = 'Heavy Rain';
+        } else {
+          condition = 'RAIN';
+          desc = 'Rain';
+        }
+      }
+      
+      // Mixed precipitation detection
+      if (precipitation > 0 && c >= -2 && c <= 2) {
+        if (j.current.weather_code >= 61 && j.current.weather_code <= 67) {
+          condition = 'RAIN_AND_SNOW';
+          desc = 'Rain and Snow';
+        }
+      }
+      
+      // Thunderstorm enhancements
+      if (j.current.weather_code >= 95 && j.current.weather_code <= 99) {
+        if (windSpeed > 40) {
+          condition = 'HEAVY_THUNDERSTORM';
+          desc = 'Severe Thunderstorm';
+        } else if (windSpeed > 25) {
+          condition = 'SCATTERED_THUNDERSTORMS';
+          desc = 'Scattered Thunderstorms';
+        } else if (precipitation > 0) {
+          condition = 'THUNDERSHOWER';
+          desc = 'Thundershower';
+        }
+        
+        // Hail detection for thunderstorms
+        if (j.current.weather_code >= 96) {
+          condition = 'HAIL';
+          desc = j.current.weather_code === 96 ? 'Light Hail' : 'Heavy Hail';
+        }
+      }
+      
+      // Temperature-based extreme conditions
+      if (c > 35) {
+        condition = 'VERY_HOT';
+        desc = 'Very Hot';
+      } else if (c < -20) {
+        condition = 'VERY_COLD';
+        desc = 'Very Cold';
+      }
+      
+      // Change "Clear" to "Sunny" if temperature is above 17°C and condition is clear AND it's daytime
+      if (j.current.weather_code === 0 && c > 17 && condition === 'CLEAR' && isDay) {
+        desc = 'Sunny';
+      }
+      
+      // Get regional heat wave threshold
+      const heatThreshold = determineHeatWaveThreshold(lat);
+      console.log(`Heat wave threshold for region (${heatThreshold.region}): ${heatThreshold.threshold}°C`);
+      
+      // Check for heat wave conditions
+      const isHot = c >= heatThreshold.threshold; // Temperature-based only, regionally appropriate
+      
+      // Add wind description to weather text if windy
+      if (isVeryWindy) {
+        desc += ', Very Windy';
+      } else if (isWindy) {
+        desc += ', Windy';
+      }
+      
+      // Add heat wave description if applicable
+      if (isHot) {
+        desc += ', Heat Wave';
+      }
+      
+      // Cache successful weather data
+      lastWeatherData = {
+        temperature: c,
+        fahrenheit: f,
+        description: desc,
+        weatherCode: j.current.weather_code,
+        isDay: isDay,
+        isHot: isHot,
+        isWindy: isWindy,
+        condition: condition,
+        lat: lat,
+        lon: lon
+      };
+      lastWeatherTimestamp = Date.now();
+      
+      // Set final weather text
+      weatherEl.textContent = `${c}°C | ${f}°F, ${desc}`;
+      
+      // Update weather icon with enhanced condition
+      const weatherIcon = document.getElementById('weather-icon');
+      const iconUrls = getGoogleWeatherIcon(j.current.weather_code, isDay, condition);
+      
+      // Create new image element and preload it
+      const imgElement = document.createElement('img');
+      imgElement.alt = desc;
+      imgElement.style.cssText = 'width: 24px; height: 24px; filter: drop-shadow(-1px -1px 0 #000) drop-shadow(1px -1px 0 #000) drop-shadow(-1px 1px 0 #000) drop-shadow(1px 1px 0 #000) drop-shadow(0 0 4px #000);';
+      
+      // Add error handler for fallback to standard Google icons
+      imgElement.onerror = function() {
+        console.log('Primary weather icon failed, using fallback:', iconUrls.fallback);
+        this.src = iconUrls.fallback;
+      };
+      
+      // Only replace the icon after the new one has loaded to prevent blinking
+      imgElement.onload = function() {
+        // Preserve secondary effects (heat-waves and wind-waves) before clearing
+        const heatWaves = weatherIcon.querySelector('#heat-waves');
+        const windWaves = weatherIcon.querySelector('#wind-waves');
+        
+        // Clear and add new main icon
+        weatherIcon.innerHTML = '';
+        weatherIcon.appendChild(imgElement);
+        
+        // Re-add preserved secondary effects
+        if (heatWaves) {
+          weatherIcon.appendChild(heatWaves);
+        }
+        if (windWaves) {
+          weatherIcon.appendChild(windWaves);
+        }
+        
+        // Now handle wind-waves logic after elements are restored
+        // Show wind waves if windy conditions
+        const windWavesElement = document.getElementById('wind-waves');
+        console.log('Wind waves element found:', !!windWavesElement, 'isWindy:', isWindy);
+        
+        if (windWavesElement) {
+          if (isWindy) {
+            console.log('Attempting to show wind waves...');
+            
+            // Load windy.svg icon
+            const repoBaseUrl = 'https://maps.gstatic.com/weather/v1/';
+            const fallbackUrl = 'https://maps.gstatic.com/weather/v1/';
+            
+            // Clear any existing error handlers
+            windWavesElement.onerror = null;
+            windWavesElement.onload = null;
+            
+            // Set up error handler first
+            windWavesElement.onerror = function() {
+              console.log('Primary wind icon failed, trying fallback...');
+              this.onerror = function() {
+                console.log('Fallback wind icon also failed, using text fallback');
+                // If both icons fail, create a text-based wind indicator
+                this.style.display = 'none';
+                
+                // Create a text-based wind indicator as last resort
+                let textWind = document.getElementById('text-wind-indicator');
+                if (!textWind) {
+                  textWind = document.createElement('span');
+                  textWind.id = 'text-wind-indicator';
+                  textWind.innerHTML = '💨';
+                  textWind.style.cssText = 'position: absolute; top: 30px; left: 97%; transform: translateX(-50%); font-size: 12px; animation: windWave 1.5s ease-in-out infinite;';
+                  weatherIcon.appendChild(textWind);
+                }
+                textWind.style.display = 'inline-block';
+              };
+              this.src = fallbackUrl + 'windy_breezy.svg';
+            };
+            
+            // Set up success handler
+            windWavesElement.onload = function() {
+              console.log('Wind icon loaded successfully');
+            };
+            
+            // Set the primary source
+            windWavesElement.src = repoBaseUrl + 'windy.svg';
+            windWavesElement.style.display = 'inline-block';
+            
+            console.log('Wind waves display set to inline-block, src:', windWavesElement.src);
+            
+            // Position wind waves - if no heat, center it; if heat, keep it to the right
+            if (isHot) {
+              windWavesElement.classList.remove('only-wind');
+              console.log('Wind waves positioned with heat waves');
+              // Update heat waves to show they're with wind
+              if (heatWaves) {
+                heatWaves.classList.add('with-wind');
+              }
+            } else {
+              windWavesElement.classList.add('only-wind');
+              console.log('Wind waves positioned alone (only-wind)');
+            }
+          } else {
+            console.log('Not windy enough, hiding wind waves');
+            windWavesElement.style.display = 'none';
+            windWavesElement.classList.remove('only-wind');
+            
+            // Also hide text wind indicator if it exists
+            const textWind = document.getElementById('text-wind-indicator');
+            if (textWind) {
+              textWind.style.display = 'none';
+            }
+            
+            // Remove wind class from heat waves
+            if (heatWaves) {
+              heatWaves.classList.remove('with-wind');
+            }
+          }
+        } else {
+          console.warn('Wind waves element not found after restoration');
+        }
+      };
+      
+      // Start loading the image (this triggers the onload event when ready)
+      imgElement.src = iconUrls.primary;
+      
+      // Show heat waves based on regional threshold (no wind requirement)
+      const heatWaves = document.getElementById('heat-waves');
+      if (heatWaves) {
+        if (isHot) {
+          heatWaves.style.display = 'inline-block';
+          // Position based on whether wind is also showing
+          if (isWindy) {
+            heatWaves.classList.add('with-wind');
+          } else {
+            heatWaves.classList.remove('with-wind');
+          }
+        } else {
+          heatWaves.style.display = 'none';
+          heatWaves.classList.remove('with-wind');
+        }
+      }
+    } catch (error) {
+      console.error('Weather fetch failed:', error);
+      
+      // Use cached weather data instead of showing "Weather N/A" (persistent like location caching)
+      if (lastWeatherData) {
+        console.log('Using cached weather data due to fetch failure');
+        const cached = lastWeatherData;
+        weatherEl.textContent = `${cached.temperature}°C | ${cached.fahrenheit}°F, ${cached.description}`;
+        
+        // Update weather icon with cached condition
+        const weatherIcon = document.getElementById('weather-icon');
+        const iconUrls = getGoogleWeatherIcon(cached.weatherCode, cached.isDay, cached.condition);
+        
+        // Create new image element for cached data
+        const imgElement = document.createElement('img');
+        imgElement.alt = cached.description;
+        imgElement.style.cssText = 'width: 24px; height: 24px; filter: drop-shadow(-1px -1px 0 #000) drop-shadow(1px -1px 0 #000) drop-shadow(-1px 1px 0 #000) drop-shadow(1px 1px 0 #000) drop-shadow(0 0 4px #000);';
+        imgElement.src = iconUrls.primary;
+        imgElement.onerror = function() { this.src = iconUrls.fallback; };
+        
+        // Use proper element restoration for cached data
+        imgElement.onload = function() {
+          // Preserve secondary effects before clearing
+          const heatWaves = weatherIcon.querySelector('#heat-waves');
+          const windWaves = weatherIcon.querySelector('#wind-waves');
+          
+          // Update icon
+          weatherIcon.innerHTML = '';
+          weatherIcon.appendChild(imgElement);
+          
+          // Re-add preserved secondary effects
+          if (heatWaves) {
+            weatherIcon.appendChild(heatWaves);
+          }
+          if (windWaves) {
+            weatherIcon.appendChild(windWaves);
+          }
+          
+          // Update secondary effects with cached data after elements are restored
+          const restoredHeatWaves = document.getElementById('heat-waves');
+          const restoredWindWaves = document.getElementById('wind-waves');
+          
+          if (restoredHeatWaves) {
+            restoredHeatWaves.style.display = cached.isHot ? 'inline-block' : 'none';
+            if (cached.isHot && cached.isWindy) {
+              restoredHeatWaves.classList.add('with-wind');
+            } else {
+              restoredHeatWaves.classList.remove('with-wind');
+            }
+          }
+          
+          if (restoredWindWaves) {
+            restoredWindWaves.style.display = cached.isWindy ? 'inline-block' : 'none';
+            if (cached.isWindy) {
+              if (cached.isHot) {
+                restoredWindWaves.classList.remove('only-wind');
+              } else {
+                restoredWindWaves.classList.add('only-wind');
+              }
+            } else {
+              restoredWindWaves.classList.remove('only-wind');
+            }
+          }
+        };
+        
+        // Start loading the cached weather icon
+        imgElement.src = iconUrls.primary;
+      } else {
+        // Only show "Weather N/A" if no cached data is available at all
+        weatherEl.textContent = "Weather N/A";
+      }
+    }
+  }
+  
+  // Method 1: Try IRL Pro location data
+  function getIRLProLocation() {
+    if (window.locationData && window.locationData.latitude && window.locationData.longitude) {
+      return {
+        lat: window.locationData.latitude,
+        lon: window.locationData.longitude,
+        source: "IRL Pro GPS"
+      };
+    }
+    return null;
+  }
+  
+  // Method 2: Try browser GPS
+  function getBrowserGPS(showLoadingMessages = true) {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation not supported'));
+        return;
+      }
+  
+      if (showLoadingMessages) {
+        placeEl.textContent = "Grabbing GPS Location...";
+      }
+      
+      const options = {
+        enableHighAccuracy: true,
+        timeout: isIOS ? 60000 : (isMobile ? 45000 : 15000),
+        maximumAge: gpsSuccessful ? 30000 : 0
+      };
+      
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          gpsSuccessful = true;
+          consecutiveGPSFailures = 0;
+          resolve({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+            accuracy: Math.round(position.coords.accuracy),
+            source: `GPS (±${Math.round(position.coords.accuracy)}m)`
+          });
+        },
+        (error) => {
+          consecutiveGPSFailures++;
+          reject(error);
+        },
+        options
+      );
+    });
+  }
+  
+  async function updateLocationAndWeather(showLoadingMessages = true){
+    try {
+      let locationData = null;
+      
+      // Try Method 1: IRL Pro location data
+      locationData = getIRLProLocation();
+      
+      // Try Method 2: Browser GPS - Allow retries even after previous failures
+      if (!locationData) {
+        try {
+          locationData = await getBrowserGPS(showLoadingMessages);
+          gpsAttempted = true;
+        } catch (gpsError) {
+          console.warn('GPS failed:', gpsError);
+          gpsAttempted = true;
+        }
+      }
+      
+      // Use last known GPS location as fallback (expanded conditions)
+      if (!locationData && lastKnownGPSLocation) {
+        const now = Date.now();
+        const locationAge = now - (lastKnownGPSLocation.timestamp || 0);
+        
+        // Use shorter cache time if GPS is working well (more responsive to location changes)
+        const maxCacheAge = gpsSuccessful ? 300000 : 600000; // 5 minutes if GPS works, 10 minutes otherwise
+        
+        // Use cached GPS location if it's recent
+        if (locationAge < maxCacheAge) {
+          locationData = lastKnownGPSLocation;
+          console.log('Using cached GPS location (age:', Math.round(locationAge/60000), 'minutes, GPS successful:', gpsSuccessful, ')');
+        } else {
+          console.log('Cached GPS location expired (age:', Math.round(locationAge/60000), 'minutes, max:', Math.round(maxCacheAge/60000), 'minutes)');
+        }
+      }
+      
+      // Update the display
+      if (locationData) {
+        // Check if this is a significantly different location (more than ~1km away)
+        let isSignificantMove = false;
+        if (lastKnownGPSLocation && lastKnownGPSLocation.lat && lastKnownGPSLocation.lon) {
+          const latDiff = Math.abs(locationData.lat - lastKnownGPSLocation.lat);
+          const lonDiff = Math.abs(locationData.lon - lastKnownGPSLocation.lon);
+          const approximateDistance = Math.sqrt(latDiff * latDiff + lonDiff * lonDiff) * 111000; // Rough conversion to meters
+          
+          if (approximateDistance > 1000) { // More than 1km
+            isSignificantMove = true;
+            console.log('🚗 Significant location change detected! Distance:', Math.round(approximateDistance), 'meters');
+            
+            // Clear location name cache when we detect a significant move
+            lastLocationName = null;
+            lastLocationTimestamp = 0;
+          }
+        }
+        
+        // Only save GPS locations to cache (not IRL Pro data)
+        if (locationData.source.includes('GPS')) {
+          lastKnownGPSLocation = locationData;
+          lastKnownGPSLocation.timestamp = Date.now();
+        }
+        
+        if (showLoadingMessages) {
+          placeEl.textContent = "Loading location...";
+        }
+        
+        try {
+          const label = await reverseGeocode(locationData.lat, locationData.lon);
+          placeEl.textContent = label;
+          
+          // Cache successful location name
+          lastLocationName = label;
+          lastLocationTimestamp = Date.now();
+          
+          // Update country flag after successful geocoding
+          updateCountryFlag(window.currentCountryName, window.currentCountryCode);
+          
+          console.log('Location updated:', locationData.source, label);
+        } catch (geocodeError) {
+          console.error('Geocoding failed:', geocodeError);
+          
+          // Use cached location name if available
+          if (lastLocationName) {
+            console.log('Using cached location name due to geocoding failure');
+            placeEl.textContent = lastLocationName;
+            
+            // Try to use cached country info for flag if available
+            if (window.currentCountryName || window.currentCountryCode) {
+              updateCountryFlag(window.currentCountryName, window.currentCountryCode);
+            }
+          } else {
+            // Only show "Location N/A" if no cached name is available
+            placeEl.textContent = "Location N/A";
+            
+            // Show fallback location icon when no location data
+            const flagImg = document.getElementById('country-flag');
+            const fallbackIcon = document.getElementById('location-fallback');
+            if (flagImg && fallbackIcon) {
+              flagImg.style.display = 'none';
+              fallbackIcon.style.display = 'inline-block';
+            }
+          }
+        }
+        
+        // Always try to fetch weather regardless of geocoding success
+        fetchWeather(locationData.lat, locationData.lon);
+      } else {
+        // During silent refreshes, don't immediately show "GPS N/A" - keep existing display
+        if (showLoadingMessages) {
+          // Only show "GPS N/A" during initial load or user-initiated refresh
+          console.error('No GPS data available from any source');
+          placeEl.textContent = "GPS N/A";
+          
+          // Show fallback location icon when no location data
+          const flagImg = document.getElementById('country-flag');
+          const fallbackIcon = document.getElementById('location-fallback');
+          if (flagImg && fallbackIcon) {
+            flagImg.style.display = 'none';
+            fallbackIcon.style.display = 'inline-block';
+          }
+          
+          // Don't immediately clear weather - let the weather fetch handle caching
+          if (!lastWeatherData) {
+            weatherEl.textContent = "Weather N/A";
+          }
+        } else {
+          // During silent refresh failures, just log the issue but keep existing display
+          console.log('Silent location refresh failed, keeping existing display');
+        }
+      }
+      
+    } catch (e) {
+      console.error('Location update failed:', e);
+      // Only show error during initial load or user-initiated refresh
+      if (showLoadingMessages) {
+        // Use cached location name if available, even during errors
+        if (lastLocationName) {
+          console.log('Using cached location name due to update failure');
+          placeEl.textContent = lastLocationName;
+          
+          // Try to use cached country info for flag if available
+          if (window.currentCountryName || window.currentCountryCode) {
+            updateCountryFlag(window.currentCountryName, window.currentCountryCode);
+          }
+        } else {
+          // Only show "GPS N/A" if no cached name is available
+          placeEl.textContent = "GPS N/A";
+          
+          // Show fallback location icon when no location data
+          const flagImg = document.getElementById('country-flag');
+          const fallbackIcon = document.getElementById('location-fallback');
+          if (flagImg && fallbackIcon) {
+            flagImg.style.display = 'none';
+            fallbackIcon.style.display = 'inline-block';
+          }
+        }
+        
+        // Don't immediately clear weather - let cached data persist
+        if (!lastWeatherData) {
+          weatherEl.textContent = "Weather N/A";
+        }
+      }
+    }
+  }
+  
+  // Network state change handlers
+  function handleOnline() {
+    console.log('Connection restored, attempting immediate update...');
+    isOnline = true;
+    hasConnectionIssues = false;
+    
+    // Clear any pending retry timeouts
+    retryTimeouts.forEach(clearTimeout);
+    retryTimeouts = [];
+    
+    // Immediately attempt to update location and weather
+    updateLocationAndWeather(false);
+  }
+  
+  function handleOffline() {
+    console.log('Connection lost, will retry when restored...');
+    isOnline = false;
+    hasConnectionIssues = true;
+  }
+  
+  // Listen for online/offline events
+  window.addEventListener('online', handleOnline);
+  window.addEventListener('offline', handleOffline);
+  
+  // Auto-refresh every 55 seconds (without loading messages)
+  setInterval(() => updateLocationAndWeather(false), 55000);
+  
+  // Additional more frequent check during connection issues
+  setInterval(() => {
+    if (hasConnectionIssues && navigator.onLine) {
+      console.log('Connection issue detected, attempting recovery update...');
+      updateLocationAndWeather(false);
+    }
+  }, 15000); // Check every 15 seconds during issues
+  
+  // Function to clear all location caches and force refresh
+  function clearLocationCache() {
+    console.log('🔄 Clearing all location caches...');
+    
+    // Clear all cached location data
+    lastKnownGPSLocation = null;
+    lastLocationName = null;
+    lastLocationTimestamp = 0;
+    lastWeatherData = null;
+    lastWeatherTimestamp = 0;
+    
+    // Clear country information for flag display
+    window.currentCountryName = null;
+    window.currentCountryCode = null;
+    
+    // Reset GPS state to allow fresh attempts
+    gpsSuccessful = false;
+    gpsAttempted = false;
+    consecutiveGPSFailures = 0;
+    
+    // Reset connection retry state
+    retryAttempts = 0;
+    hasConnectionIssues = false;
+    
+    // Clear any pending timeouts
+    retryTimeouts.forEach(clearTimeout);
+    retryTimeouts = [];
+    
+    console.log('✅ All caches cleared! Forcing fresh location update...');
+    
+    // Force immediate location update with loading messages
+    placeEl.textContent = "🔄 Refreshing location...";
+    weatherEl.textContent = "Loading...";
+    
+    // Show fallback location icon during refresh
+    const flagImg = document.getElementById('country-flag');
+    const fallbackIcon = document.getElementById('location-fallback');
+    if (flagImg && fallbackIcon) {
+      flagImg.style.display = 'none';
+      fallbackIcon.style.display = 'inline-block';
+    }
+    
+    // Small delay to show the refreshing message
+    setTimeout(() => {
+      updateLocationAndWeather(true);
+    }, 100);
+  }
+
+  // Function to force location refresh (less aggressive than clearing cache)
+  function forceLocationRefresh() {
+    console.log('🔄 Forcing location refresh...');
+    
+    // Expire current location cache to force new lookup
+    if (lastKnownGPSLocation) {
+      lastKnownGPSLocation.timestamp = Date.now() - 700000; // Make it older than 10 minutes
+    }
+    
+    // Reset GPS state to allow fresh attempts
+    gpsAttempted = false;
+    consecutiveGPSFailures = 0;
+    
+    placeEl.textContent = "🔄 Updating location...";
+    
+    // Show fallback location icon during refresh
+    const flagImg = document.getElementById('country-flag');
+    const fallbackIcon = document.getElementById('location-fallback');
+    if (flagImg && fallbackIcon) {
+      flagImg.style.display = 'none';
+      fallbackIcon.style.display = 'inline-block';
+    }
+    
+    updateLocationAndWeather(true);
+  }
+
+  // Keyboard shortcuts for manual refresh
+  document.addEventListener('keydown', function(event) {
+    // Ctrl+R or F5 = Force location refresh
+    if ((event.ctrlKey && event.key === 'r') || event.key === 'F5') {
+      event.preventDefault();
+      console.log('🔄 Manual location refresh triggered by keyboard shortcut');
+      forceLocationRefresh();
+      return false;
+    }
+    
+    // Ctrl+Shift+R = Clear all caches and refresh
+    if (event.ctrlKey && event.shiftKey && event.key === 'R') {
+      event.preventDefault();
+      console.log('🔄 Manual cache clear triggered by keyboard shortcut');
+      clearLocationCache();
+      return false;
+    }
+  });
+
+  // Double-click on location text to force refresh
+  placeEl.addEventListener('dblclick', function() {
+    console.log('🔄 Manual location refresh triggered by double-click');
+    forceLocationRefresh();
+  });
+
+  // Make functions available globally
+  window.clearLocationCache = clearLocationCache;
+  window.forceLocationRefresh = forceLocationRefresh;
+  
+  // Add visual feedback that double-click is available
+  placeEl.title = "Double-click to refresh location • Ctrl+R to force refresh • Ctrl+Shift+R to clear cache";
+  placeEl.style.cursor = "pointer";
+  
+  // Add subtle hover effect to show it's interactive
+  placeEl.addEventListener('mouseenter', function() {
+    this.style.opacity = '0.8';
+  });
+  
+  placeEl.addEventListener('mouseleave', function() {
+    this.style.opacity = '1';
+  });
+  
+  // Initialize with fallback location icon
+  const flagImg = document.getElementById('country-flag');
+  const fallbackIcon = document.getElementById('location-fallback');
+  if (flagImg && fallbackIcon) {
+    flagImg.style.display = 'none';
+    fallbackIcon.style.display = 'inline-block';
+  }
+  
+  // Start immediately (with loading messages)
+  updateLocationAndWeather(true);
+  </script>
+  </body></html>
